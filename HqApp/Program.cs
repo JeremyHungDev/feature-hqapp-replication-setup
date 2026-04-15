@@ -19,6 +19,26 @@ var branchOptions = new DbContextOptionsBuilder<BranchDbContext>()
 await using var hqDb = new HqDbContext(hqOptions);
 await using var branchDb = new BranchDbContext(branchOptions);
 
+// 等待 DB 就緒
+Console.WriteLine("等待 DB 就緒...");
+var retries = 0;
+while (retries < 10)
+{
+    try
+    {
+        await hqDb.Database.OpenConnectionAsync();
+        await hqDb.Database.CloseConnectionAsync();
+        Console.WriteLine("HQ DB 已就緒");
+        break;
+    }
+    catch
+    {
+        retries++;
+        Console.WriteLine($"HQ DB 尚未就緒，{retries}/10 重試中...");
+        await Task.Delay(3000);
+    }
+}
+
 Console.WriteLine("=== Step 1: HQ Migration ===");
 await hqDb.Database.MigrateAsync();
 Console.WriteLine("HQ Migration 完成");
