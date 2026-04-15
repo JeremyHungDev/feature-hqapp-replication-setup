@@ -47,7 +47,7 @@ public class ReplicationSetupService
         // CHECK: Cannot use DO $$ block for CREATE SUBSCRIPTION (illegal in transaction block)
         // Must check existence separately and issue CREATE outside any block
         var count = await _branchDb.Database
-            .SqlQueryRaw<int>("SELECT COUNT(*)::int FROM pg_subscription WHERE subname = 'sub_branch_from_hq'")
+            .SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM pg_subscription WHERE subname = 'sub_branch_from_hq'")
             .FirstAsync();
 
         if (count == 0)
