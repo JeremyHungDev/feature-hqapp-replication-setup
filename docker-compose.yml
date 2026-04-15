@@ -49,11 +49,23 @@ services:
       timeout: 5s
       retries: 10
 
-  hq-app:
-    build: ./HqApp
-    container_name: hq-app
+  hq-api:
+    build: ./HqApi
+    container_name: hq-api
+    ports:
+      - "5001:8080"
     environment:
       HQ_CONNECTION_STRING: "Host=hq-db;Port=5432;Database=coffee_shop;Username=hq_admin;Password=hq123"
+    depends_on:
+      hq-db:
+        condition: service_healthy
+
+  branch-api:
+    build: ./BranchApi
+    container_name: branch-api
+    ports:
+      - "5002:8080"
+    environment:
       BRANCH_CONNECTION_STRING: "Host=branch-db;Port=5432;Database=coffee_shop;Username=branch_admin;Password=branch123"
     depends_on:
       hq-db:
