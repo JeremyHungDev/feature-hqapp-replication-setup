@@ -18,8 +18,8 @@ public class ReplicationSetupService
     {
         await CreatePublicationAsync();
         await CreateSubscriptionAsync();
-        await SetBranchReadOnlyAsync();
         await CreateBranchTriggerAsync();
+        await SetBranchReadOnlyAsync();
     }
 
     private async Task CreatePublicationAsync()
@@ -43,18 +43,26 @@ public class ReplicationSetupService
     private async Task CreateSubscriptionAsync()
     {
         Console.WriteLine("[Replication] 建立 Subscription...");
-        await _branchDb.Database.ExecuteSqlRawAsync(@"
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_subscription WHERE subname = 'sub_branch_from_hq') THEN
-                    CREATE SUBSCRIPTION sub_branch_from_hq
-                        CONNECTION 'host=hq-db port=5432 dbname=coffee_shop user=hq_admin password=hq123'
-                        PUBLICATION pub_hq_to_branch;
-                    RAISE NOTICE 'Subscription 建立完成';
-                ELSE
-                    RAISE NOTICE 'Subscription 已存在，跳過';
-                END IF;
-            END $$;
-        ");
+
+        // CHECK: Cannot use DO $$ block for CREATE SUBSCRIPTION (illegal in transaction block)
+        // Must check existence separately and issue CREATE outside any block
+        var count = await _branchDb.Database
+            .SqlQueryRaw<int>("SELECT COUNT(*)::int FROM pg_subscription WHERE subname = 'sub_branch_from_hq'")
+            .FirstAsync();
+
+        if (count == 0)
+        {
+            await _branchDb.Database.ExecuteSqlRawAsync(
+                "CREATE SUBSCRIPTION sub_branch_from_hq " +
+                "CONNECTION 'host=hq-db port=5432 dbname=coffee_shop user=hq_admin password=hq123' " +
+                "PUBLICATION pub_hq_to_branch");
+            Console.WriteLine("[Replication] Subscription 建立完成");
+        }
+        else
+        {
+            Console.WriteLine("[Replication] Subscription 已存在，跳過");
+        }
+
         Console.WriteLine("[Replication] Subscription OK");
     }
 

@@ -18,6 +18,11 @@ services:
       - "max_wal_senders=10"
     volumes:
       - hq_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hq_admin -d coffee_shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   branch-db:
     image: postgres:16
@@ -38,6 +43,11 @@ services:
       - "max_wal_senders=10"
     volumes:
       - branch_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U branch_admin -d coffee_shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   hq-app:
     build: ./HqApp
@@ -46,8 +56,10 @@ services:
       HQ_CONNECTION_STRING: "Host=hq-db;Port=5432;Database=coffee_shop;Username=hq_admin;Password=hq123"
       BRANCH_CONNECTION_STRING: "Host=branch-db;Port=5432;Database=coffee_shop;Username=branch_admin;Password=branch123"
     depends_on:
-      - hq-db
-      - branch-db
+      hq-db:
+        condition: service_healthy
+      branch-db:
+        condition: service_healthy
 
   pgadmin:
     image: dpage/pgadmin4

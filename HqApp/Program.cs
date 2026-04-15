@@ -39,6 +39,26 @@ while (retries < 10)
     }
 }
 
+// 等待 Branch DB 就緒
+Console.WriteLine("等待 Branch DB 就緒...");
+var branchRetries = 0;
+while (branchRetries < 10)
+{
+    try
+    {
+        await branchDb.Database.OpenConnectionAsync();
+        await branchDb.Database.CloseConnectionAsync();
+        Console.WriteLine("Branch DB 已就緒");
+        break;
+    }
+    catch
+    {
+        branchRetries++;
+        Console.WriteLine($"Branch DB 尚未就緒，{branchRetries}/10 重試中...");
+        await Task.Delay(3000);
+    }
+}
+
 Console.WriteLine("=== Step 1: HQ Migration ===");
 await hqDb.Database.MigrateAsync();
 Console.WriteLine("HQ Migration 完成");

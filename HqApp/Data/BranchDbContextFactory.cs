@@ -8,7 +8,7 @@ public class BranchDbContextFactory : IDesignTimeDbContextFactory<BranchDbContex
     public BranchDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<BranchDbContext>();
-        optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=branch_db;Username=postgres;Password=postgres");
+        optionsBuilder.UseNpgsql("Host=localhost;Port=5433;Database=coffee_shop;Username=branch_admin;Password=branch123");
         return new BranchDbContext(optionsBuilder.Options);
     }
 }
