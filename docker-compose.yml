@@ -1,0 +1,66 @@
+services:
+  hq-db:
+    image: postgres:16
+    container_name: hq-db
+    environment:
+      POSTGRES_USER: hq_admin
+      POSTGRES_PASSWORD: hq123
+      POSTGRES_DB: coffee_shop
+    ports:
+      - "5432:5432"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    volumes:
+      - hq_data:/var/lib/postgresql/data
+
+  branch-db:
+    image: postgres:16
+    container_name: branch-db
+    environment:
+      POSTGRES_USER: branch_admin
+      POSTGRES_PASSWORD: branch123
+      POSTGRES_DB: coffee_shop
+    ports:
+      - "5433:5432"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    volumes:
+      - branch_data:/var/lib/postgresql/data
+
+  hq-app:
+    build: ./HqApp
+    container_name: hq-app
+    environment:
+      HQ_CONNECTION_STRING: "Host=hq-db;Port=5432;Database=coffee_shop;Username=hq_admin;Password=hq123"
+      BRANCH_CONNECTION_STRING: "Host=branch-db;Port=5432;Database=coffee_shop;Username=branch_admin;Password=branch123"
+    depends_on:
+      - hq-db
+      - branch-db
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@coffee.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    depends_on:
+      - hq-db
+      - branch-db
+
+volumes:
+  hq_data:
+  branch_data:
