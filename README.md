@@ -82,8 +82,39 @@ docker-compose up -d --build
 
 Docker Compose 將為您自動依序啟動環境，並執行 EF Core Migration 以及 Replication / Subscription / Trigger 的建置。
 
+### 確認啟動成功
+
+```bash
+docker logs hq-api
+```
+Expected：
+```
+HQ DB 已就緒
+HQ Migration 完成
+[Replication] 設定 Publication...
+[Replication] Publication OK
+```
+
+```bash
+docker logs branch-api
+```
+Expected：
+```
+Branch DB 已就緒
+Branch Migration 完成
+[Replication] 設定 Subscription...
+[Replication] Subscription OK
+[Replication] 設定 NOTIFY Trigger...
+[Replication] Trigger OK
+[Replication] 設定 Branch read-only...
+[Replication] Branch read-only OK
+info: BranchApi.Services.MenuNotificationListener[0]
+      MenuNotificationListener 已啟動，等待通知...
+```
+
 ### 動手玩：API 即時驗證
-待所有服務順利啟動完成後，您可以打開終端機 (PowerShell 或 Command Prompt) 開始透過 API 實際體驗：
+
+待上述 log 確認後，開啟終端機（PowerShell 或 Command Prompt）開始體驗：
 
 **1. 查詢總部菜單（能看到原始的 `cost` 成本欄位）**
 ```powershell
@@ -136,8 +167,10 @@ docker logs -f branch-api
 
 當步驟 3、4 執行後，log 中會即時出現：
 ```
-[NOTIFY] menu_update: {"item":"Oolong Tea","price":110.00,"available":true,"action":"INSERT"}
-[NOTIFY] menu_update: {"item":"Latte","price":170.00,"available":true,"action":"UPDATE"}
+info: BranchApi.Services.MenuNotificationListener[0]
+      [NOTIFY] menu_update: {"item":"Oolong Tea","price":110.00,"available":true,"action":"INSERT"}
+info: BranchApi.Services.MenuNotificationListener[0]
+      [NOTIFY] menu_update: {"item":"Latte","price":170.00,"available":true,"action":"UPDATE"}
 ```
 
 **NOTIFY 完整流程：**
@@ -171,12 +204,19 @@ HqApi POST/PUT → hq-db 寫入
 ```bash
 docker stop branch-db
 ```
-2. 此時繼續對 `hq-api` 進行資料的 POST 或 PUT 寫入。因為 HQ 有保留 Replication Slot，傳遞序列檔案 (WAL) 會替我們留著等待分店。
-3. 恢復分店：
+2. 此時繼續對 `hq-api` 進行資料的 POST 或 PUT 寫入。因為 HQ 有保留 Replication Slot，WAL 會等待分店回來再傳送：
+```powershell
+Invoke-RestMethod -Uri http://localhost:5001/api/menu -Method POST -ContentType "application/json" -Body '{"name": "Espresso", "category": "coffee", "price": 100, "cost": 20}'
+```
+3. 恢復分店（等待幾秒讓 replication catch up）：
 ```bash
 docker start branch-db
 ```
-4. 呼叫 `BranchApi` 端點，斷線期間的變更會全部自動補齊！
+4. 確認斷線期間的變更已自動補齊：
+```powershell
+Invoke-RestMethod -Uri http://localhost:5002/api/menu
+```
+Expected：看到 `Espresso` 出現在分店菜單中。
 
 ---
 
@@ -188,20 +228,32 @@ docker start branch-db
 lab-postgres-replication/
 ├── docker-compose.yml          # 環境服務定義（PG x 2, APIs x 2, pgAdmin x 1）
 ├── HqApi/                      # 總部微服務
+│   ├── Dockerfile
 │   ├── Controllers/
-│   │   └── MenuController.cs              # 提供對外寫入與操作介面
-│   ├── Models/Menu.cs                     # 帶有 Cost 欄位的核心模型
-│   ├── Data/HqDbContext.cs                # EF Core Context 與 預設資料
-│   └── Services/ReplicationPublisherService.cs  # 負責建立 pg_publication (剔除成本)
+│   │   └── MenuController.cs              # GET/POST/PUT /api/menu
+│   ├── Models/
+│   │   └── Menu.cs                        # 含 Cost 欄位的完整模型
+│   ├── Data/
+│   │   ├── HqDbContext.cs                 # EF Core Context 與 seed data
+│   │   ├── HqDbContextFactory.cs          # design-time factory（migration 用）
+│   │   └── Migrations/                    # EF Core 自動產生
+│   └── Services/
+│       └── ReplicationPublisherService.cs # 啟動時建立 Publication（冪等）
 │
 └── BranchApi/                  # 分店微服務
+    ├── Dockerfile
     ├── Controllers/
-    │   ├── MenuController.cs              # 受讀取保護的資料查詢介面
-    │   └── NotificationsController.cs     # 查詢最近的資料庫事件通知
-    ├── Models/BranchMenu.cs               # 被閹割 Cost 欄位的模型
-    ├── Data/BranchDbContext.cs            # Branch 節點 Context
+    │   ├── MenuController.cs              # GET /api/menu（無 cost 欄位）
+    │   └── NotificationsController.cs     # GET /api/notifications
+    ├── Models/
+    │   └── BranchMenu.cs                  # 不含 Cost 的分店模型
+    ├── Data/
+    │   ├── BranchDbContext.cs             # Branch EF Core Context
+    │   ├── BranchDbContextFactory.cs      # design-time factory（migration 用）
+    │   └── Migrations/                    # EF Core 自動產生
     └── Services/
-        ├── ReplicationSubscriberService.cs   # 負責向總部建立 pg_subscription 並寫入 Trigger
-        ├── MenuNotificationListener.cs       # 【核心】負責長連接 LISTEN menu_update 的背景服務
-        └── NotificationStore.cs              # 單例記憶體，用於推播暫存
+        ├── ReplicationSubscriberService.cs   # 啟動時建立 Subscription + Trigger + read-only（冪等）
+        ├── MenuNotificationListener.cs       # BackgroundService：LISTEN 'menu_update'
+        ├── NotificationStore.cs              # Singleton ConcurrentQueue（最多 50 筆）
+        └── NotificationMessage.cs            # record：ReceivedAt, Channel, Payload
 ```
